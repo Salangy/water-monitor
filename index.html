@@ -227,7 +227,7 @@
           document.getElementById('manualEnable').addEventListener('click', onManual);
           document.getElementById('manualDisable').addEventListener('click', onManual);
 
-          Socket = new WebSocket('ws://' + window.location.hostname + '/ws'); 
+          Socket = new WebSocket('ws://' + window.location.hostname + ':8080/ws'); 
           Socket.onerror = function(event) { 
             console.log('Connection Error'); 
             document.getElementById('heartbeat').className = 'red led';
