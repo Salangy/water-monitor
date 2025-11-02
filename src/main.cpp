@@ -14,8 +14,8 @@
 #define D5    14
 #define D6    12
 
-const char* ssid = "";         // Replace with your network SSID (name) NOKIA-9FE1
-const char* password = ""; // Replace with your network password
+const char* ssid = "NOKIA 2.4";         // Replace with your network SSID (name) NOKIA-9FE1
+const char* password = "SjuLEqL6YB"; // Replace with your network password
 const char* esp_hostname = "esphost"; // Desired hostname
 
 // Variables to store the measurement
@@ -23,10 +23,12 @@ long duration; // Variable for the travel time of the sound pulse
 float distanceCm; // Variable for the calculated distance in centimeters
 
 // --- PIN DEFINITIONS (Adjust these based on your wiring) ---
-const int LEVEL_LOW_SENSOR_PIN = D1;  // GPIO4 - Digital Output for the pump relay (HIGH = Pump ON)
-const int PUMP_RELAY_PIN  = D2;  // GPIO5 - Digital Input for the ultrasonic sensor (ECHO)
+//Ultrasonic is use for this sendor
+const int LEVEL_LOW_SENSOR_PIN = D4;  // GPIO2 - Digital Output for the pump relay (HIGH = Pump ON)
+//D2 conected directly to the realy pin on the board.
+const int PUMP_RELAY_PIN  = D2;  // GPIO4 - Digital Input for the ultrasonic sensor (ECHO)
 const int SENSOR_TRIGER_PIN = D3;  // GPIO0 - Digital Output for the ultrasonic sensor (TRIGER)
-const int OVERFLOW_SENSOR_PIN = D4; // GPIO2 - Digital Input (HIGH when tank is FULL/overflowing)
+const int OVERFLOW_SENSOR_PIN = D1; // GPIO5 - Digital Input (HIGH when tank is FULL/overflowing)
 const int SENSOR_ECHO_PIN = D5; // GPIO14 - Digital Input (HIGH when water is BELOW 50%)
 const int FLOW_SENSOR_PIN = D6; // GPIO12 - Digital Input (HIGH when water flow is detected)
 
@@ -47,8 +49,10 @@ int waterLevelReading = 0;
 enum Mode { AUTO_MODE, MANUAL_MODE };
 Mode currentMode = AUTO_MODE;
 
-enum Status {TOGGLE_ON, TOGGLE_OFF};
-Status currentStatus = TOGGLE_OFF;
+// Define the two thresholds
+const int HIGH_LEVEL_LIMIT = 180;
+const int LOW_LEVEL_LIMIT = 100;
+
 
 // State tracking
 bool pumpIsRunning = false;
@@ -67,9 +71,13 @@ String jsonString = "";
 StaticJsonDocument<200> doc;
 JsonObject object = doc.to<JsonObject>(); 
 
-String webpage = "<!DOCTYPE html> <html> <head> <meta name='viewport' content='width=device-width, initial-scale=1' > <style> body{ font-family:sans-serif; display:flex; align-items:center; justify-content:right; min-height:100vh; background-color: #c6d8eb; } .water-tank { width:10em; height:30em; border:.3em solid #f7f9fb; border-top:none; box-sizing:border-box; position:relative; box-shadow: -1px 1px #6494b7, -2px 2px #6494b7, -3px 3px #6494b7, -4px 4px #6494b7, -5px 5px #6494b7; } .water-tank .liquid { width:100%; height:100%; position:absolute; overflow:hidden; } .water-tank .liquid svg { height:30em; /* top: calc(100% - 1%); */ position:absolute; animation: waves 5s infinite linear; } @keyframes waves { 0% { transform:translateX(-15em); } 100% { transform:translateX(0); } } .water-tank .label { position:absolute; color:white; line-height:2em; width:4em; text-align:center; border-radius:.5em; margin-bottom: -1em; background-color:#10c340; right:2.9em; /* bottom:8%; */ } .water-tank .indicator { position:absolute; background-color:#3A3A3A; height:0.3em; width:1em; margin-bottom: -0.15em; right:0; } .water-tank .indicator[data-value='25'] { bottom: 25%; background-color: red; } .water-tank .indicator[data-value='50'] { bottom: 50%; background-color: yellow; } .water-tank .indicator[data-value='75'] { bottom: 75%; background-color: green; } .main-container{ height: 30em; width: 100%; margin-left: 5px; } .left-container{ height: 30em; width: 50%; float: left; } .right-container{ height: 30em; margin-left: 52%; } .plate { width: 10em; height: 30em; background-color: #75afe6; /* Add a background color */ /* Add more CSS styles as needed to customize the appearance */ box-shadow: -1px 1px #6494b7, -2px 2px #6494b7, -3px 3px #6494b7, -4px 4px #6494b7, -5px 5px #6494b7; margin-left: auto; margin-right: 0; } .green { background-image: -webkit-linear-gradient(top, #13fB04 0%, #58e343 50%, #ADED99 100%); } .orange { background-image: -webkit-linear-gradient(top, #f9a004 0%, #e0ac45 50%, #ead698 100%); } .red { background-image: -webkit-linear-gradient(top, #fb1304 0%, #e35843 50%, #edad99 100%); } .led { margin-top: 5px; margin-bottom: 5px; margin-left: auto; margin-right: auto; border-radius: 5px; width: 5px; height: 5px; box-shadow: 0px 0px 3px black; zoom: 5; } .switch { position: relative; display: inline-block; width: 60px; height: 34px; } .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; -webkit-transition: .4s; transition: .4s; } .slider:before { position: absolute; content: ''; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; -webkit-transition: .4s; transition: .4s; } input:checked + .slider { background-color: #2196F3; } input:focus + .slider { box-shadow: 0 0 1px #2196F3; } input:checked + .slider:before { -webkit-transform: translateX(26px); -ms-transform: translateX(26px); transform: translateX(26px); } /* Rounded sliders */ .slider.round { border-radius: 34px; } .slider.round:before { border-radius: 50%; } </style> </head> <body> <script> var Socket; var distance = 0; element = []; let toggle = 'false'; function init() { for(i=0;i<=450;i++){ element[i] = 450 - i; } document.getElementById('buttonToggle').addEventListener('click', onToggle); document.getElementById('manualEnable').addEventListener('click', onManual); document.getElementById('manualDisable').addEventListener('click', onManual); Socket = new WebSocket('ws://' + window.location.hostname + '/ws'); Socket.onerror = function(event) { console.log('Connection Error'); document.getElementById('heartbeat').className = 'red led'; setTimeout(function() { init(); }, 2000); }; Socket.onopen = function(event) { console.log('Connection established'); document.getElementById('heartbeat').className = 'green led'; }; Socket.onmessage = function(event) { processCommand(event); }; Socket.onclose = function(event) { console.log('Connection closed'); document.getElementById('heartbeat').className = 'red led'; setTimeout(function() { init(); }, 2000); }; } function onToggle(event) { var buttonState = document.getElementById('buttonToggle').checked; Socket.send(JSON.stringify({'buttonState':buttonState})); } function onManual(event){ var manualState = document.getElementById('manualEnable').checked; Socket.send(JSON.stringify({'manualState':manualState})); } function processCommand(event) { var obj = JSON.parse(event.data); if( Math.ceil(obj.WATER_LEVEL) > 179){ distance = 179; }else{ distance = obj.WATER_LEVEL; } var svg = document.getElementById('xyz'); var lbl = document.getElementById('wlbl'); var pixel = Math.ceil(((distance - 20) * 450) / 160); var percent = Math.ceil(((distance - 20) * 100) / 160); if(distance == 0.00){ percent = 5; pixel = 0; } svg.style['top']= element[pixel] + 'px'; lbl.innerHTML = percent + '%'; lbl.style['bottom'] = percent + '%'; if(obj.AUTO_MODE == 'ON'){ document.getElementById('buttonToggle').checked = false; } if(obj.OVER_FLOW == 'ON'){ document.getElementById('overflow-sensor').className ='red led'; }else if(obj.OVER_FLOW == 'OFF'){ document.getElementById('overflow-sensor').className ='green led'; } if(obj.FLOW == 'ON'){ document.getElementById('flow-sensor').className ='red led'; }else if(obj.FLOW == 'OFF'){ document.getElementById('flow-sensor').className ='green led'; } if(obj.PUMP == 'ON'){ document.getElementById('water-pump').className ='red led'; }else if(obj.PUMP == 'OFF'){ document.getElementById('water-pump').className ='green led'; } var obj = JSON.parse(event.data); console.log(obj.WATER_LEVEL); if(obj.TOGGLE == true){ document.getElementById('heartbeat').className ='green led'; }else{ document.getElementById('heartbeat').className ='red led'; } } window.onload = function(event) { init(); } </script> <div class='main-container'> <div style='height: 2em;font-size: xx-large; font-family:Franklin Gothic Medium, Arial Narrow, Arial, sans-serif; text-align: center;'> Water Tank Monitor </div> <div> <input type='radio' id='manualEnable' name='manual'> <label for='manualEnable'>Enable</label><br> <input type='radio' id='manualDisable' name='manual'checked> <label for='manualDisable'>Disable</label><br> </div> <div class='left-container' > <div class='plate' > <div style='text-align: center; padding-top: 30px;'> Flow Sensor </div> <div class='green led' id='flow-sensor'></div> <div style='text-align: center;'> Overflow Sensor </div> <div class='green led' id='overflow-sensor'></div> <div style='text-align: center;'> Water Pump </div> <div class='green led' id='water-pump'></div> <div style='text-align: center;'> Heartbeat </div> <div class='green led' id='heartbeat'></div> <div style='text-align: center; width: 100%; padding-top:2rem;'> <label class='switch'> <input type='checkbox' id='buttonToggle'> <span class='slider round'></span> </label> </div> </div> </div> <div class='right-container'> <div class='water-tank'> <div class='liquid' > <svg class='water' viewBox='0 0 200 100' id='xyz'> <defs> <linearGradient id='waterGradient' x1='0%' y1='0%' x2='0%' y2='100%'> <stop offset='0' style='stop-color:#29ABE2'/> <stop offset='0.1643' style='stop-color:#28A6E3'/> <stop offset='0.3574' style='stop-color:#2496E6'/> <stop offset='0.5431' style='stop-color:#1E7DEA'/> <stop offset='0.7168' style='stop-color:#1559F0'/> <stop offset='0.874' style='stop-color:#0B2CF7'/> <stop offset='1' style='stop-color:#0000FF'/> </linearGradient> </defs> <path fill='url(#waterGradient)' d=' M 0,0 v 100 h 200 v -100 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 '/> </svg> </div> <div class='indicator' data-value='75'></div> <div class='indicator' data-value='50'></div> <div class='indicator' data-value='25'></div> <div class='label' id='wlbl'></div> </div> </div> </div> </body> </html>";
+String webpage = "<!DOCTYPE html> <html> <head> <meta name='viewport' content='width=device-width, initial-scale=1' > <style> body{ font-family:sans-serif; display:flex; align-items:center; justify-content:right; min-height:100vh; background-color: #c6d8eb; } .water-tank { width:10em; height:30em; border:.3em solid #f7f9fb; border-top:none; box-sizing:border-box; position:relative; box-shadow: -1px 1px #6494b7, -2px 2px #6494b7, -3px 3px #6494b7, -4px 4px #6494b7, -5px 5px #6494b7; } .water-tank .liquid { width:100%; height:100%; position:absolute; overflow:hidden; } .water-tank .liquid svg { height:30em; /* top: calc(100% - 1%); */ position:absolute; animation: waves 5s infinite linear; } @keyframes waves { 0% { transform:translateX(-15em); } 100% { transform:translateX(0); } } .water-tank .label { position:absolute; color:white; line-height:2em; width:4em; text-align:center; border-radius:.5em; margin-bottom: -1em; background-color:#10c340; right:2.9em; /* bottom:8%; */ } .water-tank .indicator { position:absolute; background-color:#3A3A3A; height:0.3em; width:1em; margin-bottom: -0.15em; right:0; } .water-tank .indicator[data-value='25'] { bottom: 25%; background-color: red; } .water-tank .indicator[data-value='50'] { bottom: 50%; background-color: yellow; } .water-tank .indicator[data-value='75'] { bottom: 75%; background-color: green; } .main-container{ height: 30em; width: 100%; margin-left: 5px; } .left-container{ height: 30em; width: 50%; float: left; } .right-container{ height: 30em; margin-left: 52%; } .plate { width: 10em; height: 30em; background-color: #75afe6; /* Add a background color */ /* Add more CSS styles as needed to customize the appearance */ box-shadow: -1px 1px #6494b7, -2px 2px #6494b7, -3px 3px #6494b7, -4px 4px #6494b7, -5px 5px #6494b7; margin-left: auto; margin-right: 0; } .green { background-image: -webkit-linear-gradient(top, #13fB04 0%, #58e343 50%, #ADED99 100%); } .orange { background-image: -webkit-linear-gradient(top, #f9a004 0%, #e0ac45 50%, #ead698 100%); } .red { background-image: -webkit-linear-gradient(top, #fb1304 0%, #e35843 50%, #edad99 100%); } .led { margin-top: 5px; margin-bottom: 5px; margin-left: auto; margin-right: auto; border-radius: 5px; width: 5px; height: 5px; box-shadow: 0px 0px 3px black; zoom: 5; } .switch { position: relative; display: inline-block; width: 60px; height: 34px; } .switch input { opacity: 0; width: 0; height: 0; } .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; -webkit-transition: .4s; transition: .4s; } .slider:before { position: absolute; content: ''; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; -webkit-transition: .4s; transition: .4s; } input:checked + .slider { background-color: #2196F3; } input:focus + .slider { box-shadow: 0 0 1px #2196F3; } input:checked + .slider:before { -webkit-transform: translateX(26px); -ms-transform: translateX(26px); transform: translateX(26px); } /* Rounded sliders */ .slider.round { border-radius: 34px; } .slider.round:before { border-radius: 50%; } </style> </head> <body> <script> var Socket; var distance = 0; element = []; let toggle = 'false'; function init() { for(i=0;i<=450;i++){ element[i] = 450 - i; } document.getElementById('buttonToggle').addEventListener('click', onToggle); document.getElementById('manualEnable').addEventListener('click', onManual); document.getElementById('manualDisable').addEventListener('click', onManual); Socket = new WebSocket('ws://' + window.location.hostname + ':5000/ws'); Socket.onerror = function(event) { console.log('Connection Error'); document.getElementById('heartbeat').className = 'red led'; setTimeout(function() { init(); }, 2000); }; Socket.onopen = function(event) { console.log('Connection established'); document.getElementById('heartbeat').className = 'green led'; }; Socket.onmessage = function(event) { processCommand(event); }; Socket.onclose = function(event) { console.log('Connection closed'); document.getElementById('heartbeat').className = 'red led'; setTimeout(function() { init(); }, 2000); }; } function onToggle(event) { var buttonState = document.getElementById('buttonToggle').checked; Socket.send(JSON.stringify({'buttonState':buttonState})); } function onManual(event){ var manualState = document.getElementById('manualEnable').checked; Socket.send(JSON.stringify({'manualState':manualState})); } function processCommand(event) { var obj = JSON.parse(event.data); if( Math.ceil(obj.WATER_LEVEL) > 179){ distance = 179; }else{ distance = obj.WATER_LEVEL; } var svg = document.getElementById('xyz'); var lbl = document.getElementById('wlbl'); var pixel = Math.ceil(((distance - 20) * 450) / 160); var percent = Math.ceil(((distance - 20) * 100) / 160); if(distance == 0.00){ percent = 5; pixel = 0; } svg.style['top']= element[pixel] + 'px'; lbl.innerHTML = percent + '%'; lbl.style['bottom'] = percent + '%'; if(obj.AUTO_MODE == 'ON'){ document.getElementById('buttonToggle').checked = false; } if(obj.OVER_FLOW == 'ON'){ document.getElementById('overflow-sensor').className ='red led'; }else if(obj.OVER_FLOW == 'OFF'){ document.getElementById('overflow-sensor').className ='green led'; } if(obj.FLOW == 'ON'){ document.getElementById('flow-sensor').className ='red led'; }else if(obj.FLOW == 'OFF'){ document.getElementById('flow-sensor').className ='green led'; } if(obj.PUMP == 'ON'){ document.getElementById('water-pump').className ='red led'; }else if(obj.PUMP == 'OFF'){ document.getElementById('water-pump').className ='green led'; } var obj = JSON.parse(event.data); console.log(obj.WATER_LEVEL); if(obj.TOGGLE == true){ document.getElementById('heartbeat').className ='green led'; }else{ document.getElementById('heartbeat').className ='red led'; } if(obj.SAFTY_OFF == true){ console.log('safty activated.'); document.getElementById('safty-shut-down').textContent  = 'Safty shut down.'; } } window.onload = function(event) { init(); } </script> <div class='main-container'> <div style='height: 2em;font-size: xx-large; font-family:Franklin Gothic Medium, Arial Narrow, Arial, sans-serif; text-align: center;'> Water Tank Monitor </div> <div id='safty-shut-down'></div> <div> <input type='radio' id='manualEnable' name='manual'> <label for='manualEnable'>Enable</label><br> <input type='radio' id='manualDisable' name='manual'checked> <label for='manualDisable'>Disable</label><br> </div> <div class='left-container' > <div class='plate' > <div style='text-align: center; padding-top: 30px;'> Flow Sensor </div> <div class='green led' id='flow-sensor'></div> <div style='text-align: center;'> Overflow Sensor </div> <div class='green led' id='overflow-sensor'></div> <div style='text-align: center;'> Water Pump </div> <div class='green led' id='water-pump'></div> <div style='text-align: center;'> Heartbeat </div> <div class='green led' id='heartbeat'></div> <div style='text-align: center; width: 100%; padding-top:2rem;'> <label class='switch'> <input type='checkbox' id='buttonToggle'> <span class='slider round'></span> </label> </div> </div> </div> <div class='right-container'> <div class='water-tank'> <div class='liquid' > <svg class='water' viewBox='0 0 200 100' id='xyz'> <defs> <linearGradient id='waterGradient' x1='0%' y1='0%' x2='0%' y2='100%'> <stop offset='0' style='stop-color:#29ABE2'/> <stop offset='0.1643' style='stop-color:#28A6E3'/> <stop offset='0.3574' style='stop-color:#2496E6'/> <stop offset='0.5431' style='stop-color:#1E7DEA'/> <stop offset='0.7168' style='stop-color:#1559F0'/> <stop offset='0.874' style='stop-color:#0B2CF7'/> <stop offset='1' style='stop-color:#0000FF'/> </linearGradient> </defs> <path fill='url(#waterGradient)' d=' M 0,0 v 100 h 200 v -100 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 c -10,0 -15,5 -25,5 c -10,0 -15,-5 -25,-5 '/> </svg> </div> <div class='indicator' data-value='75'></div> <div class='indicator' data-value='50'></div> <div class='indicator' data-value='25'></div> <div class='label' id='wlbl'></div> </div> </div> </div> </body> </html>";
 // Initialization of webserver and websocket
-AsyncWebServer server(80);
+
+//Server port and WebSocket in html should be the same to work properly.
+//Socket = new WebSocket('ws://' + window.location.hostname + ':5000/ws');
+
+AsyncWebServer server(5000);
 AsyncWebSocket ws("/ws");
 
 uint32_t messageId;   
@@ -170,18 +178,21 @@ float GetUltrasonicSensorReading(){
 }
 int getLevelReading(){
   int reading =(int)GetUltrasonicSensorReading();
-
   waterLevelReading = reading;
-
-  if(reading < 25 ){
-    return 1;
-  }else if(reading > 170){
-    return 0;
+  int logic = 0;
+  if(reading > HIGH_LEVEL_LIMIT){
+    logic = 0;
+  }else if(reading < LOW_LEVEL_LIMIT){
+    logic = 1;
   }else{
-     return 0;
-  }
- 
+    if(pumpIsRunning){
+      logic = 1;
+    }else{
+      logic = 0;
+    }
 
+  }  
+  return logic;
 }
 
 
@@ -275,12 +286,7 @@ void setControlMode(Mode newMode) {
 
     }
 }
-void setToggleButtonState(Status newStatus){
-  if(currentStatus != newStatus){
-    currentStatus = newStatus;
-  }
 
-}
 void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len){
     if(type == WS_EVT_CONNECT){
         Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
@@ -309,14 +315,10 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
 
                 String choice = (it->key().c_str());
                 if(choice == "buttonState" && currentMode == MANUAL_MODE){        
-                  if(String(it->value()) == "true"){
-                      setToggleButtonState(TOGGLE_ON);
-                   // Serial.println("starting the pump.. ");
+                  if(String(it->value()) == "true"){                     
                     manualPumpOnRequest = true;
-                  }else{
-                   // Serial.println("turning off the pump..");
-                    manualPumpOffRequest = true;
-                    setToggleButtonState(TOGGLE_OFF);
+                  }else{                  
+                    manualPumpOffRequest = true;                 
                   }
                 }else if(choice == "manualState"){
                   if(String(it->value()) == "true"){
@@ -355,18 +357,18 @@ void setup() {
   Serial.print("Connected to network with IP address: ");
   Serial.println(WiFi.localIP());  
 
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "text/html", webpage);
     });
 
-    server.on("/data", HTTP_POST, [](AsyncWebServerRequest *request){
-        if (request->hasParam("value", true)) {
-            String value = request->getParam("value", true)->value();
-            request->send(200, "text/plain", "Received: " + value);
-        } else {
-            request->send(400, "text/plain", "Missing 'value' parameter");
-        }
-    });
+    // server.on("/data", HTTP_POST, [](AsyncWebServerRequest *request){
+    //     if (request->hasParam("value", true)) {
+    //         String value = request->getParam("value", true)->value();
+    //         request->send(200, "text/plain", "Received: " + value);
+    //     } else {
+    //         request->send(400, "text/plain", "Missing 'value' parameter");
+    //     }
+    // });
 
    ws.onEvent(onWsEvent);
    server.addHandler(&ws);
@@ -416,6 +418,12 @@ void loop(){
   if(saftyShutdwon)
   {
     
+    if(!saftyMessage){
+        object["SAFTY_OFF"]= true;
+        serializeJson(doc,jsonString); 
+        ws.textAll(jsonString);
+        saftyMessage = true;
+    }
     delay(2000);
     return;
     
