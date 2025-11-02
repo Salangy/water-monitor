@@ -314,6 +314,10 @@
           }else{
             document.getElementById('heartbeat').className ='red led';
           }
+          if(obj.SAFTY_OFF == true){
+            console.log('safty activated.');
+            document.getElementById('safty-shut-down').textContent  = 'Safty shut down.';
+          }
           
        
          }
@@ -327,6 +331,7 @@
         <div style='height: 2em;font-size: xx-large; font-family:Franklin Gothic Medium, Arial Narrow, Arial, sans-serif; text-align: center;'>
           Water Tank Monitor
         </div>
+        <div id='safty-shut-down'></div>
         <div>
           <input type='radio' id='manualEnable' name='manual'>
           <label for='manualEnable'>Enable</label><br>
